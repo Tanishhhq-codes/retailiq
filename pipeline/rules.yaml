@@ -1,0 +1,58 @@
+# RetailIQ pipeline configuration.
+# Cleaning behaviour lives here, not in Spark code: reorder, disable or tune a rule and re-run.
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  web_public: public/data      # read by the browser
+  web_api: api/_data           # read by Vercel serverless functions
+  history: pipeline/run_history.json
+
+spark:
+  shuffle_partitions: 8
+  driver_memory: 3g
+
+ingest:
+  order_columns: [order_id, customer_id, product_id, order_date, quantity, unit_price, discount_pct, country, payment_method, status]
+
+cleaning:
+  deduplicate: true
+  date_formats: ["yyyy-MM-dd", "dd/MM/yyyy", "MMM dd, yyyy"]
+  standardise:
+    country:
+      india: India
+      bharat: India
+      usa: USA
+      u.s.a: USA
+      us: USA
+      united states: USA
+      uk: UK
+      u.k.: UK
+      united kingdom: UK
+      germany: Germany
+      uae: UAE
+      u.a.e: UAE
+    status_canonical: [Delivered, Shipped, Cancelled, Returned]
+
+  # Evaluated top to bottom. The FIRST failing rule becomes the reject reason, so every
+  # rejected row is counted exactly once. `injected_key` links a rule to the generator's
+  # ground-truth file so detection can be verified automatically.
+  validation:
+    - {id: missing_customer_id,    reason: "Missing customer_id",                       injected_key: missing_customer_id}
+    - {id: missing_unit_price,     reason: "Missing / non-numeric unit_price",          injected_key: missing_unit_price}
+    - {id: non_numeric_quantity,   reason: "Non-numeric quantity",                      injected_key: text_quantity}
+    - {id: non_positive_quantity,  reason: "Non-positive quantity",                     injected_key: nonpositive_quantity, min_quantity: 1}
+    - {id: invalid_date,           reason: "Invalid order_date",                        injected_key: invalid_date}
+    - {id: orphan_product,         reason: "Orphan product_id (not in products)",      injected_key: orphan_product}
+    - {id: orphan_customer,        reason: "Orphan customer_id (not in customers)",    injected_key: orphan_customer}
+    - {id: price_outlier,          reason: "Unit price outlier (> 5x product median)", injected_key: price_outlier, multiplier: 5}
+
+  # Advisory checks: rows are flagged and counted but NOT rejected.
+  advisory:
+    - {id: order_before_signup, description: "Order dated before the customer's signup_date"}
+
+metrics:
+  revenue_statuses: [Delivered, Shipped]   # only fulfilled orders count as revenue
+  rfm_bins: 5
+  forecast_horizon_months: 3
+  anomaly: {window_days: 28, robust_z: 3.5}

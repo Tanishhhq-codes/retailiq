@@ -1,0 +1,30 @@
+[
+ {
+  "run_id": "run-001",
+  "finished_at": "2026-11-23 17:45 UTC",
+  "mode": "sample 0.2",
+  "spark": "4.3.0",
+  "cores": 2,
+  "raw_rows": 50836,
+  "clean_rows": 49545,
+  "quarantined": 1075,
+  "retention_pct": 97.46,
+  "total_seconds": 63.0,
+  "ground_truth_match": null,
+  "version": "1.0.0"
+ },
+ {
+  "run_id": "run-002",
+  "finished_at": "2026-11-23 17:46 UTC",
+  "mode": "full",
+  "spark": "4.3.0",
+  "cores": 2,
+  "raw_rows": 255000,
+  "clean_rows": 244500,
+  "quarantined": 5500,
+  "retention_pct": 95.88,
+  "total_seconds": 66.2,
+  "ground_truth_match": true,
+  "version": "1.0.0"
+ }
+]
