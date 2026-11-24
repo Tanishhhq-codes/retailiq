@@ -6,7 +6,7 @@ RetailIQ cleans 255,000 messy retail order rows with PySpark, never deletes a ro
 reason, and checks every cleaning rule against defects whose true counts are known. The result is
 explored in a React dashboard deployed on Vercel.
 
-[Research paper (PDF)](docs/RetailIQ_Research_Paper.pdf) · [Use your own data](#use-your-own-data-local) · [Deployment](#deployment) · [Pipeline](#how-it-works) · [Testing](#testing-and-validation)
+[Research paper (PDF)](docs/RetailIQ_Research_Paper.pdf) · [Live demo](https://retailiq-two.vercel.app) · [Use your own data](#use-your-own-data-local) · [Deployment](#deployment) · [Pipeline](#how-it-works) · [Testing](#testing-and-validation)
 
 ![Landing page: raw data with defects in orange](docs/screenshots/hero-raw.png)
 
