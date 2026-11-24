@@ -84,6 +84,11 @@ export default function Quality() {
           </div>
         </div>
 
+        {m.ground_truth.length === 0 ? (
+          <Panel title="Detection against injected defects" sub="Not applicable to this dataset.">
+            <p className="sub">Ground-truth validation compares the pipeline with defects a data generator injected in known numbers. Uploaded data has no such record, so use the Quarantine page to audit what each rule rejected.</p>
+          </Panel>
+        ) : (
         <Panel title="Detection against injected defects"
                sub={allMatch ? "Every count matches the number injected by the generator." : "Some counts differ from the injected numbers. Check the rule configuration."}
                actions={<span className={"badge " + (allMatch ? "good" : "bad")}>{allMatch ? "✓ All 11 exact" : "✗ Mismatch"}</span>}>
@@ -99,6 +104,7 @@ export default function Quality() {
           </table></div>
           <p className="sub" style={{ marginTop: 12 }}>The price-outlier rule first used a per-category fence and flagged 526 rows against 300 injected. The extra 226 were real orders for expensive products. It now compares a price with its own product's median, and a unit test covers that case.</p>
         </Panel>
+        )}
 
       </div>
     </>

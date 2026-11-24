@@ -6,7 +6,7 @@ RetailIQ cleans 255,000 messy retail order rows with PySpark, never deletes a ro
 reason, and checks every cleaning rule against defects whose true counts are known. The result is
 explored in a React dashboard deployed on Vercel.
 
-[Research paper (PDF)](docs/RetailIQ_Research_Paper.pdf) · [Deployment](#deployment) · [Pipeline](#how-it-works) · [Testing](#testing-and-validation)
+[Research paper (PDF)](docs/RetailIQ_Research_Paper.pdf) · [Upload your own data](#upload-your-own-data) · [Deployment](#deployment) · [Pipeline](#how-it-works) · [Testing](#testing-and-validation)
 
 ![Landing page: raw data with defects in orange](docs/screenshots/hero-raw.png)
 
@@ -19,7 +19,7 @@ explored in a React dashboard deployed on Vercel.
 | **5,500** | Unrecoverable rows quarantined, each with a reason code |
 | **50,000** | Spelling variants repaired in place (29,819 country, 20,046 status) |
 | **81% → 100%** | Consistency score before and after cleaning |
-| **22** | Automated tests (17 unit, 5 integration) |
+| **30** | Automated tests (17 cleaning unit, 5 integration, 8 upload-validation) |
 
 ## Design principles
 
@@ -84,6 +84,7 @@ true count was known. See Section 6.2 of the paper.
 | Customers | RFM segments, recency-frequency heatmap, revenue by city and loyalty tier |
 | Insights | 3-month forecast with a 90% range, daily anomaly scan, auto-written findings |
 | Pipeline | Stage timings, Parquet vs CSV benchmark, rule list, run history, API reference |
+| Upload data | Send your own orders, customers and products; the backend runs the Spark pipeline and the dashboard then shows your results |
 
 Each panel carries a short note explaining what the data is and why it helps in that visualisation
 (`src/explain.ts`).
@@ -107,11 +108,50 @@ npm run dev          # http://localhost:5173, /api works in dev too
 pip install -r requirements.txt
 python pipeline/generate_data.py         # seeded raw files, about 17 MB, git-ignored
 python pipeline/run_pipeline.py          # about 1 minute on 2 cores
-python -m pytest -q tests                # 22 tests
+python -m pytest -q tests                # 30 tests
 ```
 
 `python pipeline/run_pipeline.py --sample 0.2` runs on 20% of the rows for quick development. It logs
 a run but does not overwrite the site data unless you also pass `--export`.
+
+## Upload your own data
+
+Vercel cannot run Spark, so uploads go to a small **FastAPI backend** that runs the same pipeline on a
+machine with Java. Each upload is an isolated job, so it never touches the demo data.
+
+```
+Browser (Vercel) ──POST /api/upload──► FastAPI ──validate + normalise──► run_pipeline.py --workdir jobs/<id>
+        ▲                                                                       │
+        └──── poll /api/jobs/<id>, then read /api/jobs/<id>/data/*.json ◄───────┘
+```
+
+```bash
+pip install -r backend/requirements.txt          # needs Java 17+
+uvicorn backend.app:app --port 8000              # terminal 1
+npm run dev                                      # terminal 2, then open Upload data in the sidebar
+```
+
+Required files (the page offers templates):
+
+| File | Columns |
+|---|---|
+| orders (CSV) | `order_id, customer_id, product_id, order_date, quantity, unit_price, discount_pct, country, payment_method, status` |
+| customers (JSON lines or CSV) | `customer_id, city, tier, signup_date` |
+| products (CSV) | `product_id, category` (optional `product_name, list_price`) |
+
+Header names are matched ignoring case and column order. Rows that break a rule are quarantined with a
+reason, exactly as for the demo data. At least 8 months of orders are needed for the forecast, and the
+country map and date formats in `pipeline/rules.yaml` may need extending for your data. Uploaded data
+has no injected defects, so the "detection against injected defects" check is not applicable to it.
+
+**Backend settings** (environment variables): `RETAILIQ_MAX_UPLOAD_MB` (50), `RETAILIQ_JOB_TTL_HOURS` (24),
+`RETAILIQ_JOB_TIMEOUT_S` (900), `RETAILIQ_MAX_QUEUE` (4), `RETAILIQ_CORS_ORIGINS` (`*`, set it to your site
+URL in production), `RETAILIQ_JOBS_DIR`. One pipeline runs at a time; extra uploads wait in a queue.
+
+**Hosting it:** build `Dockerfile.backend` and run it on Render, Railway, Fly.io or a VPS with about 3 GB of
+RAM. Then set `VITE_BACKEND_URL` to its address in the Vercel project settings and redeploy. Without a
+backend the site still works as a static snapshot; the Upload page just reports that the backend is offline.
+The backend has no authentication, so put it behind your own gateway before exposing it widely.
 
 ## Configuring the cleaning rules
 
@@ -123,6 +163,7 @@ disabling a rule changes the result.
 ## Testing and validation
 
 - `tests/test_clean_rules.py`: 17 unit tests on hand-written rows (date formats, each rule, duplicates, priority order, the outlier false-positive case, disabling a rule).
+- `tests/test_backend.py`: 8 tests for the upload validation (header matching, column reordering, JSON-lines and CSV customers, path safety). Skipped if FastAPI is not installed.
 - `tests/test_ground_truth.py`: after a full run, every detected count must equal the injected count, row accounting must balance, the cube total must equal the KPI, and the cleaned data must pass independent re-checks.
 
 ## Deployment
@@ -149,6 +190,7 @@ transactional tables (Delta Lake or Iceberg), and validation on real data and a 
 
 ```
 pipeline/   rules.yaml, run_pipeline.py, retailiq/ (ingest, clean, quality, process, analytics, storage, export)
+backend/    app.py (FastAPI upload service), requirements.txt
 api/        quarantine.js, summary.js, health.js, _data/ (bundled JSON)
 src/        React app (pages/, charts.tsx, data.ts, explain.ts, styles.css)
 public/data meta.json, analytics.json, cube.json, quarantine.json

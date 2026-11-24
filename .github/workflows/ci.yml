@@ -9,7 +9,7 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -r requirements.txt
+      - run: pip install -r backend/requirements.txt
       - run: python pipeline/generate_data.py
       - run: python pipeline/run_pipeline.py
       - run: python -m pytest -q tests

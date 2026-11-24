@@ -42,22 +42,30 @@ def insights(proc, cube_rows, fc, anom, clean_m, cfg):
     pay = max(pay_rows.items(), key=lambda x: x[1]); n_orders = sum(pay_rows.values())
     by_year = {}
     for r in rows: by_year[r["order_month"][:4]] = by_year.get(r["order_month"][:4], 0) + r["revenue"]
-    y24, y25 = by_year.get("2024", 0), by_year.get("2025", 0)
-    q4_25 = sum(r["revenue"] for r in rows if r["order_month"] >= "2025-10")
+    years = sorted(by_year)
     pre = clean_m["advisory"]["order_before_signup"]
+    top2 = f"; the top two categories ({cats[0][0]}, {cats[1][0]}) account for {100*(cats[0][1]+cats[1][1])/tot:.1f}%" if len(cats) > 1 else ""
+    geo = f"{ctry[0][0]} generates {100*ctry[0][1]/tot:.1f}% of revenue" + (f", followed by {ctry[1][0]} ({100*ctry[1][1]/tot:.1f}%)." if len(ctry) > 1 else ".")
+    if len(years) >= 2 and by_year[years[-2]] > 0:
+        y0, y1 = years[-2], years[-1]
+        q4 = sum(r["revenue"] for r in rows if r["order_month"] >= f"{y1}-10" and r["order_month"][:4] == y1)
+        growth = (f"Revenue changed {100*(by_year[y1]/by_year[y0]-1):+.0f}% from {y0} to {y1} (note: {y1} may be a partial year), and Oct-Dec {y1} "
+                  f"produced {100*q4/by_year[y1]:.0f}% of {y1} revenue. The fitted festive-season uplift is {fc['festive_uplift_pct']}%.")
+    else:
+        growth = f"The fitted monthly growth is {fc['growth_per_month_pct']}% and the festive-season (Oct-Dec) uplift is {fc['festive_uplift_pct']}%."
     out = [
         {"title": "Revenue concentration", "tone": "info",
-         "body": f"{cats[0][0]} brings in {100*cats[0][1]/tot:.1f}% of fulfilled revenue; the top two categories ({cats[0][0]}, {cats[1][0]}) account for {100*(cats[0][1]+cats[1][1])/tot:.1f}%."},
+         "body": f"{cats[0][0]} brings in {100*cats[0][1]/tot:.1f}% of fulfilled revenue{top2}."},
         {"title": "Geography", "tone": "info",
-         "body": f"{ctry[0][0]} generates {100*ctry[0][1]/tot:.1f}% of revenue, followed by {ctry[1][0]} ({100*ctry[1][1]/tot:.1f}%)."},
+         "body": geo},
         {"title": "Growth and seasonality", "tone": "good",
-         "body": f"Revenue grew {100*(y25/y24-1):.0f}% year on year, and Oct-Dec 2025 alone produced {100*q4_25/y25:.0f}% of 2025 revenue. The fitted festive-season uplift is {fc['festive_uplift_pct']}%."},
+         "body": growth},
         {"title": "Payments", "tone": "info",
          "body": f"{pay[0]} is the most used method ({100*pay[1]/n_orders:.1f}% of fulfilled orders)."},
         {"title": "Forecast reliability", "tone": "warn",
          "body": f"Hold-out MAPE is {fc['mape_holdout_pct']}% on the last 3 known months. The model is intentionally small (24 data points); treat the band as indicative."},
         {"title": "Finding the labels did not contain", "tone": "warn",
-         "body": f"{pre:,} clean orders ({100*pre/clean_m['clean_rows']:.1f}%) are dated before the customer's signup date. This was not an injected defect: the generator does not link orders to signups. It is reported as an advisory flag, not rejected, because it needs a business decision."},
+         "body": f"{pre:,} clean orders ({100*pre/max(clean_m['clean_rows'], 1):.1f}%) are dated before the customer's signup date. It is reported as an advisory flag, not rejected, because it needs a business decision."},
         {"title": "Anomaly scan", "tone": "good" if not anom["flagged"] else "warn",
          "body": f"{len(anom['flagged'])} day(s) exceeded |z| > {anom['threshold']} against a {anom['window_days']}-day rolling median." if anom["flagged"]
                  else f"No day exceeded |z| > {anom['threshold']} against a {anom['window_days']}-day rolling median, as expected for generated data with no injected spikes."},
@@ -75,6 +83,8 @@ def run(proc, quarantine_rows, meta_core, clean_m, cfg, root):
             m = monthly.setdefault(r["order_month"], {"order_month": r["order_month"], "revenue": 0.0, "orders": 0})
             m["revenue"] += r["revenue"]; m["orders"] += int(r["orders"])
     monthly = sorted(monthly.values(), key=lambda x: x["order_month"])
+    if len(monthly) < 8:
+        raise ValueError(f"Not enough data for the forecast: found {len(monthly)} month(s) of fulfilled orders, need at least 8.")
     fc = analytics.forecast(monthly, cfg["metrics"]["forecast_horizon_months"])
     a = cfg["metrics"]["anomaly"]
     anom = analytics.anomalies(proc["daily"], a["window_days"], a["robust_z"])

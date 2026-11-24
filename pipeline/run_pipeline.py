@@ -21,8 +21,14 @@ def main():
     ap.add_argument("--config", default=str(ROOT / "pipeline" / "rules.yaml"))
     ap.add_argument("--sample", type=float, default=None, help="fraction of raw rows to process (dev runs)")
     ap.add_argument("--export", action="store_true", help="export web data even for a sample run")
+    ap.add_argument("--workdir", default=None,
+                    help="isolated run: read <dir>/raw, write everything else under <dir> (used by the upload backend)")
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
+    if args.workdir:
+        wd = Path(args.workdir).resolve()
+        cfg["paths"].update(raw=str(wd / "raw"), processed=str(wd / "processed"), web_public=str(wd / "out"),
+                            web_api=str(wd / "out"), history=str(wd / "history.json"))
     pdir = ROOT / cfg["paths"]["processed"]; pdir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s",
                         handlers=[logging.FileHandler(pdir / "pipeline.log", mode="w"), logging.StreamHandler()])

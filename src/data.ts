@@ -50,15 +50,25 @@ export type Cube = {
   rows: [number, number, number, number, number, number, number, number][];
 };
 
+// ---- which dataset is shown: the bundled demo run, or a user's upload processed by the backend
+export const API_URL = ((import.meta.env.VITE_BACKEND_URL as string | undefined) ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+const JOB_KEY = "riq-job";
+export function getJob(): string | null { try { return localStorage.getItem(JOB_KEY); } catch { return null; } }
+export function setJob(id: string | null) { try { id ? localStorage.setItem(JOB_KEY, id) : localStorage.removeItem(JOB_KEY); } catch { /* storage unavailable */ } }
+export const dataUrl = (file: string) => { const j = getJob(); return j ? `${API_URL}/api/jobs/${j}/data/${file}` : `${BASE}data/${file}`; };
+
 const cache = new Map<string, Promise<unknown>>();
 function load<T>(file: string): Promise<T> {
-  if (!cache.has(file)) {
-    cache.set(file, fetch(`${BASE}data/${file}`).then((r) => {
-      if (!r.ok) throw new Error(`Could not load ${file} (${r.status}). Run the pipeline and redeploy.`);
+  const url = dataUrl(file);
+  if (!cache.has(url)) {
+    cache.set(url, fetch(url).then((r) => {
+      if (!r.ok) throw new Error(getJob()
+        ? "Your uploaded dataset is no longer available (results expire after a while, or the backend is offline). Switch back to the demo data from the banner above."
+        : `Could not load ${file} (${r.status}). Run the pipeline and redeploy.`);
       return r.json();
-    }));
+    }).catch((e) => { cache.delete(url); throw e; }));
   }
-  return cache.get(file) as Promise<T>;
+  return cache.get(url) as Promise<T>;
 }
 
 export function useJson<T>(file: string) {
