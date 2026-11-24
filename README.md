@@ -148,7 +148,12 @@ has no injected defects, so the "detection against injected defects" check is no
 `RETAILIQ_JOB_TIMEOUT_S` (900), `RETAILIQ_MAX_QUEUE` (4), `RETAILIQ_CORS_ORIGINS` (`*`, set it to your site
 URL in production), `RETAILIQ_JOBS_DIR`. One pipeline runs at a time; extra uploads wait in a queue.
 
-**Hosting it:** build `Dockerfile.backend` and run it on Render, Railway, Fly.io or a VPS with about 3 GB of
+**Free hosting:** a Hugging Face Space (Docker, free CPU with 16 GB RAM) works. Create a Space with the Docker SDK
+and put the two files from `deploy/huggingface/` in it (`Dockerfile`, `README.md`); it builds from this repository.
+The Space sleeps after about 2 days idle and wakes in roughly a minute. Its API URL is
+`https://<user>-<space-name>.hf.space`. Set that as `VITE_BACKEND_URL` on Vercel.
+
+**Other hosting:** build `Dockerfile.backend` and run it on Render, Railway, Fly.io or a VPS with about 3 GB of
 RAM. Then set `VITE_BACKEND_URL` to its address in the Vercel project settings and redeploy. Without a
 backend the site still works as a static snapshot; the Upload page just reports that the backend is offline.
 The backend has no authentication, so put it behind your own gateway before exposing it widely.
