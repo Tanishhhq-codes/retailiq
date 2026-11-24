@@ -86,7 +86,7 @@ export default function Quality() {
 
         {m.ground_truth.length === 0 ? (
           <Panel title="Detection against injected defects" sub="Not applicable to this dataset.">
-            <p className="sub">Ground-truth validation compares the pipeline with defects a data generator injected in known numbers. Uploaded data has no such record, so use the Quarantine page to audit what each rule rejected.</p>
+            <p className="sub">Ground-truth validation compares the pipeline with defects a data generator injected in known numbers. Your own data has no such record, so use the Quarantine page to audit what each rule rejected.</p>
           </Panel>
         ) : (
         <Panel title="Detection against injected defects"

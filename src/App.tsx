@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, MemoryRouter, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { STATIC, getJob, setJob } from "./data";
+import { STATIC } from "./data";
 import { BrandMark } from "./Brand";
 import Home from "./pages/Home";
 import { fmtInt, useMeta } from "./data";
@@ -10,7 +10,6 @@ import Quarantine from "./pages/Quarantine";
 import Customers from "./pages/Customers";
 import Insights from "./pages/Insights";
 import Pipeline from "./pages/Pipeline";
-import Upload from "./pages/Upload";
 import Palette, { usePaletteKey } from "./Palette";
 
 // The static preview runs in a sandboxed frame where only "#name" hashes are kept, so routes map to #quality etc.
@@ -35,7 +34,6 @@ const NAV = [
   { to: "/customers", label: "Customers", icon: I("M16 20v-1a4 4 0 00-4-4H7a4 4 0 00-4 4v1M9.5 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM21 20v-1a4 4 0 00-3-3.9M16 4.2a3.5 3.5 0 010 6.6") },
   { to: "/insights", label: "Insights", icon: I("M3 17l5-5 4 4 8-9M15 7h5v5") },
   { to: "/pipeline", label: "Pipeline", icon: I("M5 6a2 2 0 100-4 2 2 0 000 4zM19 22a2 2 0 100-4 2 2 0 000 4zM5 6v5a4 4 0 004 4h6a4 4 0 014 4") },
-  ...(STATIC ? [] : [{ to: "/upload", label: "Upload data", icon: I("M12 16V4M7 9l5-5 5 5M4 20h16") }]),
 ];
 
 function Shell({ dark, setDark }: { dark: boolean; setDark: (d: boolean) => void }) {
@@ -72,14 +70,7 @@ function Shell({ dark, setDark }: { dark: boolean; setDark: (d: boolean) => void
         </div>
       </aside>
       <main className="main">
-        {getJob() && (
-          <div className="jobbar" role="status">
-            <span>Showing <b>your uploaded dataset</b> ({getJob()}), not the demo data.</span>
-            <button className="linkbtn" onClick={() => { setJob(null); location.assign("/overview"); }}>Back to demo data</button>
-          </div>
-        )}
         <Routes>
-          <Route path="/upload" element={<Upload />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/quality" element={<Quality />} />
           <Route path="/quarantine" element={<Quarantine />} />

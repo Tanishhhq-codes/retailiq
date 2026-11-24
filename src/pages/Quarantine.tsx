@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Panel, Loading } from "../charts";
-import { STATIC, dataUrl, fmtInt, getJob } from "../data";
+import { BASE, STATIC, fmtInt } from "../data";
 
 type Raw = { columns: string[]; rows: (string | null)[][] };
 let rawPromise: Promise<Raw> | null = null;
-const loadRaw = () => (rawPromise ??= fetch(dataUrl("quarantine.json")).then((r) => { if (!r.ok) throw new Error("Could not load the rejected rows."); return r.json(); }));
+const loadRaw = () => (rawPromise ??= fetch(`${BASE}data/quarantine.json`).then((r) => { if (!r.ok) throw new Error("Could not load the rejected rows."); return r.json(); }));
 
 /** Same filtering and paging as api/quarantine.js, done in the browser when the API is not available. */
 function filterRows(raw: Raw, rule: string, q: string) {
@@ -37,7 +37,7 @@ export default function Quarantine() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { const t = setTimeout(() => { setQuery(q); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
-  const [local, setLocal] = useState(STATIC || getJob() != null);   // uploaded runs have no serverless API: filter in the browser
+  const [local, setLocal] = useState(STATIC);
   useEffect(() => {
     const ctl = new AbortController();
     const viaBrowser = () => loadRaw().then((raw) => { if (!ctl.signal.aborted) { setData(localPage(raw, rule, query, page)); setError(null); } });
