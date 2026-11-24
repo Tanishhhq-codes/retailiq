@@ -1,40 +1,36 @@
 # RetailIQ
 
-A data-quality pipeline and analytics dashboard for retail order data.
-PySpark cleans 255,000 messy order rows, quarantines every rejected row with a reason, and a React
-dashboard on Vercel lets you explore the result.
+**A quarantine-based big data analytics pipeline with ground-truth validation for retail transaction data.**
 
-Built on the course project *From Raw Data to Insight: An End-to-End Big Data Analytics Pipeline*
-(SRMIST, 21CSC314P). The five stages and the injected-defect validation come from that work; this
-version makes the rules configurable, adds tests, new analytics and a deployable web app.
+RetailIQ cleans 255,000 messy retail order rows with PySpark, never deletes a row without a recorded
+reason, and checks every cleaning rule against defects whose true counts are known. The result is
+explored in a React dashboard deployed on Vercel.
+
+[Research paper (PDF)](docs/RetailIQ_Research_Paper.pdf) · [Live demo](#deployment) · [Pipeline](#how-it-works) · [Testing](#testing-and-validation)
 
 ![Landing page: raw data with defects in orange](docs/screenshots/hero-raw.png)
 
-The landing page is a live LED dot-matrix chart of the real monthly revenue, drawn on a canvas every
-frame. It starts as **raw** data (orange dots are defects: outlier spikes, missing-value gaps, a
-duplicate ghost line, orphan rows), then each half of the screen dissolves dot by dot into the
-**clean** series plus the 3-month forecast, and back, on a 20-second loop. Move the cursor over it to
-open a lens that shows the opposite state. It respects `prefers-reduced-motion` (one static frame).
+## Highlights
 
-| Raw | Clean | Lens |
-|---|---|---|
-| ![](docs/screenshots/hero-raw.png) | ![](docs/screenshots/hero-clean.png) | ![](docs/screenshots/hero-lens.png) |
-
-![Overview](docs/screenshots/overview.png)
-
-## What it does
-
-| Page | What you can do |
+| | |
 |---|---|
-| Home (`/`) | The dot-matrix hero above, with the run's headline numbers. |
-| Overview (`/overview`) | Filter by month, status, payment, country and category (click any bar). KPIs compare with the previous period. |
-| Data quality | Row reconciliation (255,000 − 5,000 − 5,500 = 244,500), a before/after scorecard on five quality dimensions, and every rule checked against the number of defects injected. |
-| Quarantine | Search, filter and download the 5,500 rejected rows, shown as raw text with the rule that stopped them. |
-| Customers | RFM segments, recency-frequency heatmap, revenue by city and tier. |
-| Insights | 3-month forecast with a 90% range (hold-out error reported), daily anomaly scan, auto-written findings. |
-| Pipeline | Stage timings, Parquet vs CSV benchmark, rule list, run history, API reference. |
+| **255,000 → 244,500** | Raw rows in, trusted rows out (95.88% retained) |
+| **11 / 11** | Defect classes detected with counts exactly equal to the injected counts |
+| **5,500** | Unrecoverable rows quarantined, each with a reason code |
+| **50,000** | Spelling variants repaired in place (29,819 country, 20,046 status) |
+| **81% → 100%** | Consistency score before and after cleaning |
+| **22** | Automated tests (17 unit, 5 integration) |
 
-## Architecture
+## Design principles
+
+1. **Text-first ingestion.** Every order field is read as a string so type inference cannot hide a defect. Typing happens explicitly in the cleaning stage, with `try_cast` and `try_to_date` so bad values become NULL instead of crashing Spark.
+2. **Quarantine, not delete.** A row that cannot be repaired without guessing is written to a quarantine store with a reason code. Nothing is imputed and nothing disappears silently.
+3. **Measure, do not assume.** The data is synthetic, so the number of injected defects is known. Each rule is verified against that number.
+
+Every run satisfies the reconciliation identity `N_raw = N_duplicates + N_quarantined + N_clean`
+(255,000 = 5,000 + 5,500 + 244,500).
+
+## How it works
 
 ```
 generate_data.py ─► data/raw ─► PySpark pipeline ─► public/data/*.json  ─► React dashboard (static)
@@ -43,30 +39,79 @@ generate_data.py ─► data/raw ─► PySpark pipeline ─► public/data/*.js
                                  export)
 ```
 
-Vercel serves static files and short serverless functions; it cannot run Spark. So Spark runs
-**offline** and exports small JSON files (about 1.2 MB in total) that the site reads. To refresh the site: re-run the
-pipeline, commit the JSON, push.
+| Stage | What it does |
+|---|---|
+| 1. Ingestion | Reads `orders.csv`, `customers.json`, `products.csv` as text; PERMISSIVE mode; null and blank profiling |
+| 2. Cleaning | Deduplicates, standardises spellings and dates, types safely, applies ordered rules, quarantines rejects |
+| 3. Processing | Broadcast joins, KPI and aggregate tables, window-function ranking, RFM customer segments |
+| 4. Storage | Month-partitioned Snappy Parquet, quarantine store, storage benchmark |
+| 5. Export | Compact JSON consumed by the web app and serverless API |
 
-## Run locally
+Vercel cannot run Spark, so the pipeline runs **offline** and exports about 1.2 MB of JSON that the
+site reads. To refresh the site: re-run the pipeline, commit the JSON, push.
+
+### Injected defects and results
+
+| Defect | Injected | Detected | Treatment |
+|---|---:|---:|---|
+| Exact duplicate rows | 5,000 | 5,000 | Dropped |
+| Missing `customer_id` | 1,500 | 1,500 | Quarantined |
+| Missing `unit_price` | 1,200 | 1,200 | Quarantined |
+| Quantity zero or negative | 800 | 800 | Quarantined |
+| Quantity as text | 400 | 400 | Quarantined |
+| Price 50x to 250x too high | 300 | 300 | Quarantined |
+| Impossible date | 600 | 600 | Quarantined |
+| Orphan `customer_id` | 450 | 450 | Quarantined |
+| Orphan `product_id` | 250 | 250 | Quarantined |
+| Country spelling variants | 29,819 | 29,819 | Repaired |
+| Status casing variants | 20,046 | 20,046 | Repaired |
+
+### A rule that was wrong
+
+The first price-outlier rule used a per-category Tukey fence and flagged 526 rows against 300 injected.
+The extra 226 were genuine orders for expensive products. It was replaced with a per-product test
+(price above 5x that product's median), which flags exactly 300. The error was found only because the
+true count was known. See Section 6.2 of the paper.
+
+## Dashboard
+
+| Page | Purpose |
+|---|---|
+| Home (`/`) | Live dot-matrix chart of monthly revenue that dissolves from raw data (defects in orange) to clean data plus forecast. Respects `prefers-reduced-motion`. |
+| Overview | KPIs with previous-period comparison; filter by month, status, payment, country and category |
+| Data quality | Row reconciliation, before/after scorecard on five dimensions, detection against injected defects |
+| Quarantine | Search, filter and download the 5,500 rejected rows as raw text with the rule that stopped them |
+| Customers | RFM segments, recency-frequency heatmap, revenue by city and loyalty tier |
+| Insights | 3-month forecast with a 90% range, daily anomaly scan, auto-written findings |
+| Pipeline | Stage timings, Parquet vs CSV benchmark, rule list, run history, API reference |
+
+Each panel carries a short note explaining what the data is and why it helps in that visualisation
+(`src/explain.ts`).
+
+| Overview | Data quality |
+|---|---|
+| ![Overview](docs/screenshots/overview.png) | ![Quality](docs/screenshots/quality.png) |
+
+## Getting started
+
+**Dashboard only** (uses the JSON already in the repo, no Java needed):
 
 ```bash
-pip install -r requirements.txt          # needs Java 17+ for Spark
-python pipeline/generate_data.py         # seeded raw files (about 17 MB, git-ignored)
-python pipeline/run_pipeline.py          # about 1 minute on 2 cores
-python -m pytest -q tests                # 22 tests
-npm install && npm run dev               # http://localhost:5173, /api works in dev too
+npm install
+npm run dev          # http://localhost:5173, /api works in dev too
 ```
 
-`python pipeline/run_pipeline.py --sample 0.2` runs on 20% of the rows for quick development
-(it logs a run but does not overwrite the site data).
+**Full pipeline** (needs Python 3.10+ and Java 17+ for Spark):
 
-## Deploy to Vercel
+```bash
+pip install -r requirements.txt
+python pipeline/generate_data.py         # seeded raw files, about 17 MB, git-ignored
+python pipeline/run_pipeline.py          # about 1 minute on 2 cores
+python -m pytest -q tests                # 22 tests
+```
 
-1. Push this folder to a GitHub repository. Commit `public/data/` and `api/_data/` (about 1.2 MB, already generated). `data/` is git-ignored.
-2. In Vercel choose **Add New, Project**, import the repository. Framework preset: **Vite**. No environment variables are needed.
-3. Deploy. `vercel.json` already sets the build command, the SPA rewrites and bundles `api/_data` into the functions.
-
-Or with the CLI: `npm i -g vercel && vercel --prod`.
+`python pipeline/run_pipeline.py --sample 0.2` runs on 20% of the rows for quick development. It logs
+a run but does not overwrite the site data unless you also pass `--export`.
 
 ## Configuring the cleaning rules
 
@@ -75,24 +120,47 @@ rule becomes the reject reason, so each row is counted once. Set `enabled: false
 threshold (`multiplier`, `min_quantity`) or reorder them, then re-run. A unit test proves that
 disabling a rule changes the result.
 
-## How correctness is checked
+## Testing and validation
 
 - `tests/test_clean_rules.py`: 17 unit tests on hand-written rows (date formats, each rule, duplicates, priority order, the outlier false-positive case, disabling a rule).
-- `tests/test_ground_truth.py`: after a full run, every detected count must equal the number the generator injected, row accounting must balance, the cube total must equal the KPI, and the cleaned data must pass independent re-checks.
+- `tests/test_ground_truth.py`: after a full run, every detected count must equal the injected count, row accounting must balance, the cube total must equal the KPI, and the cleaned data must pass independent re-checks.
 
-## Honest limits
+## Deployment
 
-- **The data is synthetic.** That is deliberate (defect counts are known exactly), but real data has subtler problems. Segments on this data reflect random assignment, not behaviour.
-- **The forecast is small by design:** trend plus a festive-season dummy on 24 monthly points, validated on a 3-month hold-out.
-- **The site is a snapshot.** It shows the last pipeline run; it does not run Spark on request.
-- **Found, not injected:** about 9,600 orders are dated before the customer signed up. They are flagged as an advisory check, not rejected.
+1. Push this repository to GitHub. `public/data/` and `api/_data/` (about 1.2 MB) are committed; `data/` is git-ignored.
+2. In Vercel choose **Add New, Project**, import the repository, and keep the **Vite** framework preset. No environment variables are needed.
+3. Deploy. `vercel.json` sets the build command, SPA rewrites and bundles `api/_data` into the functions.
 
-## Layout
+CLI alternative: `npx vercel --prod`.
+
+## Limitations
+
+- **Synthetic data.** Deliberate, because defect counts are known exactly, but real data has subtler problems (near-duplicates, drift, semantic errors). Segments reflect random assignment, not behaviour.
+- **Count-level validation.** Equal counts do not prove the same rows were flagged. Row-level ground truth (precision and recall per rule) is future work.
+- **Single machine, batch only.** Not tested on a multi-node cluster. Parquet is not faster than CSV for a full scan at 17 MB; partition pruning is about 1.9x faster.
+- **Small forecast.** Log-linear trend plus a festive-season term on 24 monthly points, 1.98% hold-out error. Treat the 90% range as indicative.
+- **Snapshot site.** It shows the last pipeline run and does not run Spark on request.
+- **Advisory finding.** About 9,600 orders are dated before the customer signed up. They are flagged, not rejected, because that is a business decision.
+
+Proposed future work: streaming ingestion (Structured Streaming, Kafka), orchestration (Airflow),
+transactional tables (Delta Lake or Iceberg), and validation on real data and a cluster.
+
+## Repository layout
 
 ```
 pipeline/   rules.yaml, run_pipeline.py, retailiq/ (ingest, clean, quality, process, analytics, storage, export)
 api/        quarantine.js, summary.js, health.js, _data/ (bundled JSON)
-src/        React app (pages/Home.tsx is the canvas hero; charts.tsx, data.ts, styles.css)
-public/data meta.json, analytics.json, cube.json
+src/        React app (pages/, charts.tsx, data.ts, explain.ts, styles.css)
+public/data meta.json, analytics.json, cube.json, quarantine.json
 tests/      pytest suite
+docs/       research paper and screenshots
 ```
+
+## Research paper
+
+**RetailIQ: A Quarantine-Based Big Data Analytics Pipeline with Ground-Truth Validation for Retail
+Transaction Data.** Tanishiq Jaiswal, Aman Singh, Divyanshu Singh. SRM Institute of Science and
+Technology, Delhi-NCR Campus, November 2026. [Read the PDF](docs/RetailIQ_Research_Paper.pdf).
+
+Built on the SRMIST course project *From Raw Data to Insight: An End-to-End Big Data Analytics Pipeline*
+(21CSC314P).
